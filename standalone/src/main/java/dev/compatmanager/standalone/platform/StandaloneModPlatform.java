@@ -7,49 +7,43 @@ import java.io.File;
 import java.nio.file.Path;
 import java.util.*;
 
-/**
- * Builds a mod list purely from the file system (no Minecraft running).
- * This works for every Minecraft version ever released.
- */
 public class StandaloneModPlatform {
 
     private final Path modsDir;
     private final ModMetaParser parser = new ModMetaParser();
+
     private List<UnifiedModMeta> cache;
+    private List<File>           jarCache;
+    private Map<String, File>    jarMap;
 
     public StandaloneModPlatform(Path modsDir) {
         this.modsDir = modsDir;
     }
 
+    public Path getModsDir() { return modsDir; }
+
+    // ── Mod metadata ──────────────────────────────────────────────────────
+
     public List<UnifiedModMeta> getLoadedMods() {
         if (cache != null) return cache;
-
-        List<UnifiedModMeta> mods = new ArrayList<>();
-        File[] jars = modsDir.toFile().listFiles(f ->
-                f.isFile() && (f.getName().endsWith(".jar") || f.getName().endsWith(".litemod")));
-
-        if (jars != null) {
-            for (File jar : jars) {
-                parser.parse(jar).ifPresent(mods::add);
-            }
-        }
-
-        // Also scan one level of subdirectories (some packs use subfolders)
-        File[] dirs = modsDir.toFile().listFiles(File::isDirectory);
-        if (dirs != null) {
-            for (File dir : dirs) {
-                File[] subJars = dir.listFiles(f ->
-                        f.isFile() && f.getName().endsWith(".jar"));
-                if (subJars != null) {
-                    for (File jar : subJars) {
-                        parser.parse(jar).ifPresent(mods::add);
-                    }
-                }
-            }
-        }
-
-        cache = Collections.unmodifiableList(mods);
+        buildCache();
         return cache;
+    }
+
+    public List<File> getJarFiles() {
+        if (jarCache != null) return jarCache;
+        buildCache();
+        return jarCache;
+    }
+
+    public Map<String, File> getModJarMap() {
+        if (jarMap != null) return jarMap;
+        buildCache();
+        return jarMap;
+    }
+
+    public Optional<File> getJarForMod(String modId) {
+        return Optional.ofNullable(getModJarMap().get(modId.toLowerCase(Locale.ROOT)));
     }
 
     public Optional<UnifiedModMeta> getMod(String modId) {
@@ -64,8 +58,43 @@ public class StandaloneModPlatform {
 
     public Map<String, Long> getLoaderSummary() {
         Map<String, Long> summary = new LinkedHashMap<>();
-        getLoadedMods().forEach(m ->
-                summary.merge(m.loaderType(), 1L, Long::sum));
+        getLoadedMods().forEach(m -> summary.merge(m.loaderType(), 1L, Long::sum));
         return summary;
+    }
+
+    // ── Cache build ───────────────────────────────────────────────────────
+
+    private void buildCache() {
+        List<UnifiedModMeta> mods = new ArrayList<>();
+        List<File>           jars = new ArrayList<>();
+        Map<String, File>    jmap = new LinkedHashMap<>();
+
+        scanDir(modsDir.toFile(), mods, jars, jmap);
+
+        // One level of subdirectories (some launchers use pack subfolders)
+        File[] dirs = modsDir.toFile().listFiles(File::isDirectory);
+        if (dirs != null) {
+            for (File dir : dirs) {
+                if (dir.getName().equals("disabled-by-compatmanager")) continue;
+                scanDir(dir, mods, jars, jmap);
+            }
+        }
+
+        cache    = Collections.unmodifiableList(mods);
+        jarCache = Collections.unmodifiableList(jars);
+        jarMap   = Collections.unmodifiableMap(jmap);
+    }
+
+    private void scanDir(File dir, List<UnifiedModMeta> mods, List<File> jars, Map<String, File> jmap) {
+        File[] files = dir.listFiles(f ->
+                f.isFile() && (f.getName().endsWith(".jar") || f.getName().endsWith(".litemod")));
+        if (files == null) return;
+        for (File jar : files) {
+            parser.parse(jar).ifPresent(meta -> {
+                mods.add(meta);
+                jars.add(jar);
+                jmap.putIfAbsent(meta.id().toLowerCase(Locale.ROOT), jar);
+            });
+        }
     }
 }

@@ -1,27 +1,51 @@
 package dev.compatmanager.standalone;
 
+import dev.compatmanager.standalone.db.ModDatabase;
+import dev.compatmanager.standalone.db.VersionUtils;
+import dev.compatmanager.standalone.detector.*;
 import dev.compatmanager.standalone.parser.UnifiedModMeta;
 import dev.compatmanager.standalone.platform.StandaloneModPlatform;
 
 import java.util.*;
 
-/**
- * All detection logic operating purely on UnifiedModMeta — no MC runtime needed.
- */
 public class StandaloneDetector {
 
     private final StandaloneModPlatform platform;
+    private final ScanContext           ctx;
+
+    private static final List<IssueDetector> EXTRA_DETECTORS = List.of(
+            new ClassConflictDetector(),
+            new JavaBytecodeDetector(),
+            new LibraryShadeDetector(),
+            new ConfigConflictDetector()
+    );
 
     public StandaloneDetector(StandaloneModPlatform platform) {
+        this(platform, ScanContext.defaults());
+    }
+
+    public StandaloneDetector(StandaloneModPlatform platform, ScanContext ctx) {
         this.platform = platform;
+        this.ctx      = ctx;
     }
 
     public List<StandaloneIssue> detectAll() {
         List<StandaloneIssue> issues = new ArrayList<>();
+
         issues.addAll(detectVersionConflicts());
         issues.addAll(detectDuplicates());
         issues.addAll(detectKnownIncompatibilities());
+        issues.addAll(detectFunctionalGroups());
+        issues.addAll(detectRequiredCompanions());
         issues.addAll(detectMixedLoaders());
+
+        for (IssueDetector detector : EXTRA_DETECTORS) {
+            try {
+                issues.addAll(detector.detect(platform, ctx));
+            } catch (Exception e) {
+                // Never crash the whole scan due to one detector failing
+            }
+        }
 
         issues.sort(Comparator.comparingInt(i -> i.severity().ordinal()));
         return deduplicate(issues);
@@ -31,7 +55,6 @@ public class StandaloneDetector {
 
     private List<StandaloneIssue> detectVersionConflicts() {
         List<StandaloneIssue> issues = new ArrayList<>();
-
         for (UnifiedModMeta mod : platform.getLoadedMods()) {
             for (UnifiedModMeta.DepEntry dep : mod.dependencies()) {
                 switch (dep.kind()) {
@@ -49,9 +72,8 @@ public class StandaloneDetector {
                             ));
                         } else {
                             String installed = found.get().version();
-                            if (!dep.versionRange().isBlank()
-                                    && !dep.versionRange().equals("*")
-                                    && !versionSatisfied(installed, dep.versionRange())) {
+                            if (!dep.versionRange().isBlank() && !dep.versionRange().equals("*")
+                                    && !VersionUtils.versionInRange(installed, dep.versionRange())) {
                                 issues.add(new StandaloneIssue(
                                         "Version Conflict",
                                         StandaloneIssue.Severity.CRITICAL,
@@ -66,13 +88,15 @@ public class StandaloneDetector {
                     }
                     case INCOMPATIBLE -> {
                         if (platform.isModLoaded(dep.modId())) {
-                            issues.add(new StandaloneIssue(
-                                    "Incompatible Mods",
-                                    StandaloneIssue.Severity.CRITICAL,
-                                    List.of(mod.id(), dep.modId()),
-                                    mod.id() + " declares " + dep.modId() + " as incompatible.",
-                                    List.of("Remove " + dep.modId(), "Remove " + mod.id())
-                            ));
+                            Optional<String> jar = platform.getJarForMod(dep.modId())
+                                    .map(f -> f.getAbsolutePath());
+                            issues.add(StandaloneIssue.builder("Incompatible Mods",
+                                            StandaloneIssue.Severity.CRITICAL)
+                                    .affectedMods(mod.id(), dep.modId())
+                                    .description(mod.id() + " declares " + dep.modId() + " as incompatible.")
+                                    .solutions("Remove " + dep.modId(), "Remove " + mod.id())
+                                    .jarPath(jar.orElse(""))
+                                    .build());
                         }
                     }
                     default -> {}
@@ -82,30 +106,12 @@ public class StandaloneDetector {
         return issues;
     }
 
-    // ── Duplicate detection ───────────────────────────────────────────────
-
-    private static final List<Set<String>> FUNCTIONAL_GROUPS = List.of(
-            Set.of("sodium", "optifabric", "rubidium", "embeddium", "replaymod"),
-            Set.of("iris", "optifabric"),
-            Set.of("phosphor", "starlight", "moonrise"),
-            Set.of("journeymap", "voxelmap", "xaeros_minimap", "xaerosminimap"),
-            Set.of("applied_energistics2", "refined_storage"),
-            Set.of("lazydfu", "datafixer_slayer"),
-            Set.of("terraforged", "terralith"),
-            Set.of("oh_the_biomes_youll_go", "biomes_o_plenty")
-    );
+    // ── Duplicate mod IDs ─────────────────────────────────────────────────
 
     private List<StandaloneIssue> detectDuplicates() {
         List<StandaloneIssue> issues = new ArrayList<>();
-        Set<String> allIds = new HashSet<>();
         Map<String, Long> idCount = new HashMap<>();
-
-        for (UnifiedModMeta mod : platform.getLoadedMods()) {
-            allIds.add(mod.id());
-            idCount.merge(mod.id(), 1L, Long::sum);
-        }
-
-        // Same ID loaded more than once
+        platform.getLoadedMods().forEach(m -> idCount.merge(m.id(), 1L, Long::sum));
         idCount.entrySet().stream()
                 .filter(e -> e.getValue() > 1)
                 .forEach(e -> issues.add(new StandaloneIssue(
@@ -113,81 +119,96 @@ public class StandaloneDetector {
                         StandaloneIssue.Severity.CRITICAL,
                         List.of(e.getKey()),
                         "'" + e.getKey() + "' is present " + e.getValue()
-                                + " times in the mods folder (multiple JAR files).",
+                                + " times in the mods folder.",
                         List.of("Remove duplicate JAR files for " + e.getKey())
                 )));
-
-        // Functional overlaps
-        for (Set<String> group : FUNCTIONAL_GROUPS) {
-            List<String> present = group.stream().filter(allIds::contains).sorted().toList();
-            if (present.size() < 2) continue;
-
-            List<String> solutions = present.stream()
-                    .map(id -> "Remove " + id + " and keep one of the alternatives")
-                    .toList();
-
-            issues.add(new StandaloneIssue(
-                    "Functional Duplicate",
-                    StandaloneIssue.Severity.HIGH,
-                    present,
-                    "These mods provide overlapping functionality: " + String.join(", ", present),
-                    solutions
-            ));
-        }
         return issues;
     }
 
     // ── Known incompatibility database ────────────────────────────────────
 
-    record KnownPair(String a, String b, StandaloneIssue.Severity sev, String reason, String patch) {}
-
-    private static final List<KnownPair> KNOWN = List.of(
-            new KnownPair("sodium",        "optifabric",        StandaloneIssue.Severity.CRITICAL,
-                    "Sodium and OptiFabric use conflicting rendering pipelines.", null),
-            new KnownPair("iris",          "optifabric",        StandaloneIssue.Severity.CRITICAL,
-                    "Iris replaces OptiFabric's shader system entirely.", null),
-            new KnownPair("rubidium",      "embeddium",         StandaloneIssue.Severity.HIGH,
-                    "Rubidium and Embeddium are both Forge ports of Sodium — keep one.", null),
-            new KnownPair("phosphor",      "starlight",         StandaloneIssue.Severity.HIGH,
-                    "Both replace the Minecraft light engine.", null),
-            new KnownPair("starlight",     "moonrise",          StandaloneIssue.Severity.HIGH,
-                    "Both replace the Minecraft light engine.", null),
-            new KnownPair("terraforged",   "terralith",         StandaloneIssue.Severity.MEDIUM,
-                    "Both overhaul world generation.", null),
-            new KnownPair("create",        "immersive_engineering", StandaloneIssue.Severity.LOW,
-                    "Minor recipe conflicts.", "create_crafts_additions"),
-            new KnownPair("applied_energistics2", "refined_storage", StandaloneIssue.Severity.MEDIUM,
-                    "Both provide storage networks — recipe conflicts.", null),
-            // Legacy 1.7-1.12 known pairs
-            new KnownPair("optifine",      "fastcraft",         StandaloneIssue.Severity.HIGH,
-                    "OptiFine and FastCraft conflict on chunk rendering (1.7-1.12).", null),
-            new KnownPair("optifine",      "betterfoliage",     StandaloneIssue.Severity.MEDIUM,
-                    "OptiFine and BetterFoliage can conflict on shader rendering.", null),
-            new KnownPair("codechickencore", "codechickenlib",  StandaloneIssue.Severity.HIGH,
-                    "CodeChickenCore and CodeChickenLib are different versions of the same lib.", null),
-            new KnownPair("nei",           "jei",               StandaloneIssue.Severity.HIGH,
-                    "NEI (Not Enough Items) and JEI (Just Enough Items) conflict on recipe display.", null),
-            new KnownPair("inventorytweaks", "inventorysorter",  StandaloneIssue.Severity.MEDIUM,
-                    "Both modify inventory sorting behavior.", null)
-    );
-
     private List<StandaloneIssue> detectKnownIncompatibilities() {
         List<StandaloneIssue> issues = new ArrayList<>();
-        for (KnownPair p : KNOWN) {
-            if (platform.isModLoaded(p.a()) && platform.isModLoaded(p.b())) {
-                List<String> solutions = new ArrayList<>(List.of(
-                        "Remove " + p.a(), "Remove " + p.b()));
-                if (p.patch() != null)
-                    solutions.add("Or install compatibility patch: " + p.patch());
+        List<ModDatabase.IncompatPair> pairs = ModDatabase.getIncompatPairsForMcVersion(ctx.mcVersion());
 
-                issues.add(new StandaloneIssue(
-                        "Known Incompatibility",
-                        p.sev(),
-                        List.of(p.a(), p.b()),
-                        p.reason(),
-                        solutions
-                ));
-            }
+        for (ModDatabase.IncompatPair p : pairs) {
+            if (!platform.isModLoaded(p.modA()) || !platform.isModLoaded(p.modB())) continue;
+
+            List<String> solutions = new ArrayList<>(List.of(
+                    "Remove " + p.modA(), "Remove " + p.modB()));
+            if (p.patchMod() != null)
+                solutions.add("Or install compatibility patch: " + p.patchMod());
+
+            // Use modB as the auto-fix target (disable the second/newer one)
+            String jarPath = platform.getJarForMod(p.modB())
+                    .map(f -> f.getAbsolutePath()).orElse("");
+
+            issues.add(StandaloneIssue.builder("Known Incompatibility", p.severity())
+                    .affectedMods(p.modA(), p.modB())
+                    .description("[" + p.category() + "] " + p.reason())
+                    .solutions(solutions)
+                    .jarPath(jarPath)
+                    .build());
+        }
+        return issues;
+    }
+
+    // ── Functional groups ─────────────────────────────────────────────────
+
+    private List<StandaloneIssue> detectFunctionalGroups() {
+        List<StandaloneIssue> issues = new ArrayList<>();
+        Set<String> allIds = new HashSet<>();
+        platform.getLoadedMods().forEach(m -> allIds.add(m.id().toLowerCase()));
+
+        for (ModDatabase.FunctionalGroup group : ModDatabase.getFunctionalGroups()) {
+            List<String> present = group.modIds().stream()
+                    .filter(allIds::contains)
+                    .sorted()
+                    .toList();
+            if (present.size() < 2) continue;
+
+            // Auto-fix: disable all except the first alphabetically
+            String keepMod  = present.get(0);
+            String disableMod = present.get(1);
+            String jarPath  = platform.getJarForMod(disableMod)
+                    .map(f -> f.getAbsolutePath()).orElse("");
+
+            List<String> solutions = present.stream()
+                    .map(id -> "Keep " + id + " and remove the others")
+                    .toList();
+
+            issues.add(StandaloneIssue.builder("Functional Duplicate", group.severity())
+                    .affectedMods(present)
+                    .description("[" + group.category() + "] " + group.groupName()
+                            + " — these mods provide overlapping functionality: "
+                            + String.join(", ", present))
+                    .solutions(solutions)
+                    .jarPath(jarPath)
+                    .build());
+        }
+        return issues;
+    }
+
+    // ── Required companions ───────────────────────────────────────────────
+
+    private List<StandaloneIssue> detectRequiredCompanions() {
+        List<StandaloneIssue> issues = new ArrayList<>();
+        for (ModDatabase.RequiredCompanion companion : ModDatabase.getRequiredCompanions()) {
+            if (!platform.isModLoaded(companion.primaryMod())) continue;
+            if (platform.isModLoaded(companion.requiredMod()))  continue;
+
+            List<String> solutions = new ArrayList<>();
+            solutions.add("Install " + companion.requiredMod());
+            if (companion.modrinthUrl() != null)
+                solutions.add("Download from Modrinth: " + companion.modrinthUrl());
+
+            issues.add(new StandaloneIssue(
+                    "Missing Required Companion",
+                    StandaloneIssue.Severity.HIGH,
+                    List.of(companion.primaryMod(), companion.requiredMod()),
+                    companion.reason(),
+                    solutions
+            ));
         }
         return issues;
     }
@@ -197,16 +218,12 @@ public class StandaloneDetector {
     private List<StandaloneIssue> detectMixedLoaders() {
         List<StandaloneIssue> issues = new ArrayList<>();
         Set<String> loaderTypes = new HashSet<>();
+        platform.getLoadedMods().forEach(m -> {
+            if (!m.loaderType().equals("unknown")) loaderTypes.add(m.loaderType());
+        });
 
-        for (UnifiedModMeta mod : platform.getLoadedMods()) {
-            if (!mod.loaderType().equals("unknown")) {
-                loaderTypes.add(mod.loaderType());
-            }
-        }
-
-        // Forge mods in a Fabric environment (or vice versa)
-        boolean hasFabric  = loaderTypes.contains("fabric") || loaderTypes.contains("quilt");
-        boolean hasForge   = loaderTypes.contains("forge")  || loaderTypes.contains("forge-legacy");
+        boolean hasFabric   = loaderTypes.contains("fabric") || loaderTypes.contains("quilt");
+        boolean hasForge    = loaderTypes.contains("forge")  || loaderTypes.contains("forge-legacy");
         boolean hasNeoForge = loaderTypes.contains("neoforge");
 
         if (hasFabric && (hasForge || hasNeoForge)) {
@@ -217,70 +234,28 @@ public class StandaloneDetector {
                     "Your mods folder contains a mix of Fabric and Forge mods. "
                             + "These are NOT compatible — each mod only runs on its specific loader.",
                     List.of(
-                            "Separate your mods into different mods folders for each loader",
+                            "Separate your mods into different folders for each loader",
                             "Use Sinytra Connector (Fabric) to run some Forge mods on Fabric",
                             "Check each mod's page to confirm it supports your loader"
                     )
             ));
         }
-
         if (hasForge && hasNeoForge) {
             issues.add(new StandaloneIssue(
                     "Forge + NeoForge Mix",
                     StandaloneIssue.Severity.HIGH,
                     List.of("forge mods", "neoforge mods"),
-                    "Forge mods (1.20.1 and earlier) and NeoForge mods may not be binary-compatible.",
+                    "Forge mods (≤1.20.1) and NeoForge mods may not be binary-compatible.",
                     List.of(
                             "Verify each mod supports your specific loader version",
-                            "Check if NeoForge-specific mods have Forge equivalents"
+                            "Check if NeoForge mods have Forge equivalents"
                     )
             ));
         }
-
         return issues;
     }
 
     // ── Utilities ─────────────────────────────────────────────────────────
-
-    private boolean versionSatisfied(String installed, String range) {
-        try {
-            if (range.startsWith(">=")) return cmp(installed, range.substring(2)) >= 0;
-            if (range.startsWith(">"))  return cmp(installed, range.substring(1)) >  0;
-            if (range.startsWith("<=")) return cmp(installed, range.substring(2)) <= 0;
-            if (range.startsWith("<"))  return cmp(installed, range.substring(1)) <  0;
-            if (range.startsWith("~"))  {
-                String prefix = range.substring(1, range.lastIndexOf('.'));
-                return installed.startsWith(prefix);
-            }
-            if (range.contains(",")) {
-                char lo = range.charAt(0), hi = range.charAt(range.length() - 1);
-                String[] parts = range.substring(1, range.length() - 1).split(",", 2);
-                int loC = cmp(installed, parts[0].trim());
-                boolean loOk = lo == '[' ? loC >= 0 : loC > 0;
-                boolean hiOk = parts[1].trim().isEmpty() ||
-                        (hi == ']'
-                                ? cmp(installed, parts[1].trim()) <= 0
-                                : cmp(installed, parts[1].trim()) < 0);
-                return loOk && hiOk;
-            }
-            return installed.equals(range);
-        } catch (Exception e) { return true; }
-    }
-
-    private int cmp(String a, String b) {
-        String[] av = a.split("[.+\\-]");
-        String[] bv = b.split("[.+\\-]");
-        for (int i = 0; i < Math.min(av.length, bv.length); i++) {
-            try {
-                int d = Integer.compare(Integer.parseInt(av[i]), Integer.parseInt(bv[i]));
-                if (d != 0) return d;
-            } catch (NumberFormatException e) {
-                int d = av[i].compareTo(bv[i]);
-                if (d != 0) return d;
-            }
-        }
-        return Integer.compare(av.length, bv.length);
-    }
 
     private List<StandaloneIssue> deduplicate(List<StandaloneIssue> in) {
         Set<String> seen = new LinkedHashSet<>();

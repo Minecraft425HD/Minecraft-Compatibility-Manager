@@ -143,7 +143,7 @@ public class ModMetaParser {
     private UnifiedModMeta parseForgeToml(ZipFile zip, ZipEntry entry, String loaderType) throws IOException {
         Toml toml = new Toml().read(read(zip, entry));
 
-        List<Map<String, Object>> mods = (List<Map<String, Object>>) toml.getList("mods");
+        List<Map<String, Object>> mods = (List<Map<String, Object>>) (List<?>) toml.getList("mods");
         if (mods == null || mods.isEmpty()) return null;
 
         Map<String, Object> mod = mods.get(0);
@@ -153,7 +153,7 @@ public class ModMetaParser {
         String desc    = str(mod, "description", "");
 
         List<UnifiedModMeta.DepEntry> deps = new ArrayList<>();
-        List<Map<String, Object>> depList  = (List<Map<String, Object>>) toml.getList("dependencies." + id);
+        List<Map<String, Object>> depList  = (List<Map<String, Object>>) (List<?>) toml.getList("dependencies." + id);
         if (depList != null) {
             for (Map<String, Object> dep : depList) {
                 String depId  = str(dep, "modId", "");

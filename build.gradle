@@ -7,27 +7,33 @@ architectury {
     minecraft = rootProject.minecraft_version
 }
 
+// Standalone and forge-legacy manage their own build setup
+def PLAIN_PROJECTS = ["standalone", "forge-legacy"]
+
 subprojects {
-    apply plugin: "dev.architectury.loom"
-    apply plugin: "architectury-plugin"
+    if (!(project.name in PLAIN_PROJECTS)) {
+        apply plugin: "dev.architectury.loom"
+        apply plugin: "architectury-plugin"
+
+        repositories {
+            maven { url = "https://maven.architectury.dev/" }
+            maven { url = "https://maven.minecraftforge.net/" }
+            maven { url = "https://maven.neoforged.net/releases/" }
+            maven { url = "https://maven.quiltmc.org/repository/release/" }
+        }
+
+        dependencies {
+            minecraft "com.mojang:minecraft:${rootProject.minecraft_version}"
+        }
+    }
+
     apply plugin: "maven-publish"
 
     base {
         archivesName = "${rootProject.archives_base_name}-${project.name}"
     }
-    version  = rootProject.mod_version
-    group    = rootProject.maven_group
-
-    repositories {
-        maven { url = "https://maven.architectury.dev/" }
-        maven { url = "https://maven.minecraftforge.net/" }
-        maven { url = "https://maven.neoforged.net/releases/" }
-        maven { url = "https://maven.quiltmc.org/repository/release/" }
-    }
-
-    dependencies {
-        minecraft "com.mojang:minecraft:${rootProject.minecraft_version}"
-    }
+    version = rootProject.mod_version
+    group   = rootProject.maven_group
 
     java {
         sourceCompatibility = JavaVersion.VERSION_17

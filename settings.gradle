@@ -1,5 +1,3 @@
-rootProject.name = "compatmanager"
-
 pluginManagement {
     repositories {
         maven { url = "https://maven.fabricmc.net/" }
@@ -9,6 +7,8 @@ pluginManagement {
         gradlePluginPortal()
     }
 }
+
+rootProject.name = "compatmanager"
 
 // ── Modern multi-loader modules (1.16.5 – latest) ─────────────────────────
 include("common", "fabric", "forge", "neoforge", "quilt")

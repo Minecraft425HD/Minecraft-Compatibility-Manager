@@ -1,14 +1,15 @@
 package dev.compatmanager.standalone;
 
+import dev.compatmanager.standalone.detector.ScanContext;
+import dev.compatmanager.standalone.fix.AutoFixer;
+import dev.compatmanager.standalone.fix.ScriptGenerator;
 import dev.compatmanager.standalone.parser.UnifiedModMeta;
 import dev.compatmanager.standalone.platform.StandaloneModPlatform;
 import dev.compatmanager.standalone.report.ReportGenerator;
 
 import java.io.File;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.List;
-import java.util.Map;
+import java.nio.file.*;
+import java.util.*;
 
 /**
  * Standalone Minecraft Compatibility Manager.
@@ -17,80 +18,172 @@ import java.util.Map;
  * No Minecraft installation required — just point it at your mods folder.
  *
  * Usage:
- *   java -jar compatmanager-standalone.jar [mods-folder] [--html report.html]
+ *   java -jar compatmanager-standalone.jar [mods-folder] [options]
  *
- * Examples:
- *   java -jar compatmanager-standalone.jar
- *       → scans ./mods in the current directory
- *
- *   java -jar compatmanager-standalone.jar "C:\Users\You\AppData\Roaming\.minecraft\mods"
- *       → scans a specific mods folder
- *
- *   java -jar compatmanager-standalone.jar ~/.minecraft/mods --html report.html
- *       → scans and also writes an HTML report
- *
- * Supports all mod metadata formats:
- *   fabric.mod.json         (Fabric 1.14+)
- *   quilt.mod.json          (Quilt 1.18+)
- *   META-INF/mods.toml      (Forge 1.13 – 1.20.1)
- *   META-INF/neoforge.mods.toml (NeoForge 1.20.2+)
- *   mcmod.info              (Forge 1.7 – 1.12.2)
- *   litemod.json            (LiteLoader 1.5 – 1.12.2)
- *   MANIFEST.MF             (fallback for all JARs)
+ * Options:
+ *   --mc-version <1.20.1>          MC version for context-sensitive detection
+ *   --loader <fabric|forge|...>    Loader hint (fabric, forge, neoforge, quilt)
+ *   --config-dir <path>            Also scan this config folder for keybind/ID conflicts
+ *   --fix                          Automatically disable conflicting mods
+ *   --dry-run                      Preview --fix actions without making changes
+ *   --script                       Generate fix.bat + fix.sh scripts
+ *   --html [file]                  Write HTML report (default: compat-report.html)
+ *   --json [file]                  Write JSON report (default: compat-report.json)
+ *   --verbose                      Show all mods, not just problematic ones
+ *   --help                         Show this help
  */
 public class StandaloneScanner {
 
+    private record CLIArgs(
+            Path    modsDir,
+            String  mcVersion,
+            String  loaderHint,
+            Path    configDir,
+            boolean fix,
+            boolean dryRun,
+            boolean script,
+            Path    htmlOut,
+            boolean htmlEnabled,
+            Path    jsonOut,
+            boolean jsonEnabled,
+            boolean verbose,
+            boolean help
+    ) {}
+
     public static void main(String[] args) throws Exception {
-        Path modsDir  = Paths.get("mods");
-        Path htmlOut  = null;
+        CLIArgs cli = parseArgs(args);
 
-        // Parse args
-        for (int i = 0; i < args.length; i++) {
-            if ("--html".equals(args[i]) && i + 1 < args.length) {
-                htmlOut = Paths.get(args[++i]);
-            } else if (!args[i].startsWith("--")) {
-                modsDir = Paths.get(args[i]);
-            }
+        if (cli.help()) {
+            printHelp();
+            System.exit(0);
         }
 
-        // Auto-detect common mods folder locations
-        if (!modsDir.toFile().exists()) {
-            modsDir = findDefaultModsDir();
-        }
+        Path modsDir = cli.modsDir();
+        if (!modsDir.toFile().exists()) modsDir = findDefaultModsDir();
 
         if (!modsDir.toFile().exists()) {
             System.err.println("ERROR: Mods folder not found: " + modsDir.toAbsolutePath());
-            System.err.println("Usage: java -jar compatmanager-standalone.jar [mods-folder]");
+            System.err.println("Usage: java -jar compatmanager-standalone.jar [mods-folder] [options]");
+            System.err.println("Run with --help for full usage.");
             System.exit(1);
         }
 
         System.out.println("Scanning: " + modsDir.toAbsolutePath());
+        if (!cli.mcVersion().isBlank())
+            System.out.println("MC version: " + cli.mcVersion());
+        if (!cli.loaderHint().isBlank())
+            System.out.println("Loader: " + cli.loaderHint());
 
-        StandaloneModPlatform platform  = new StandaloneModPlatform(modsDir);
-        List<UnifiedModMeta>  mods      = platform.getLoadedMods();
-        Map<String, Long>     loaders   = platform.getLoaderSummary();
-        StandaloneDetector    detector  = new StandaloneDetector(platform);
-        List<StandaloneIssue> issues    = detector.detectAll();
-        ReportGenerator       reporter  = new ReportGenerator();
+        ScanContext ctx = new ScanContext(
+                cli.mcVersion(), cli.loaderHint(), cli.configDir(),
+                cli.verbose(), cli.dryRun());
 
-        reporter.printConsole(mods, issues, loaders);
+        StandaloneModPlatform platform = new StandaloneModPlatform(modsDir);
+        List<UnifiedModMeta>  mods     = platform.getLoadedMods();
+        Map<String, Long>     loaders  = platform.getLoaderSummary();
+        StandaloneDetector    detector = new StandaloneDetector(platform, ctx);
+        List<StandaloneIssue> issues   = detector.detectAll();
+        ReportGenerator       reporter = new ReportGenerator();
 
-        if (htmlOut != null) {
-            reporter.writeHtml(mods, issues, htmlOut);
-        } else {
-            // Always write HTML report alongside the scanner
-            Path defaultHtml = Paths.get("compat-report.html");
-            reporter.writeHtml(mods, issues, defaultHtml);
+        // Auto-fix
+        if (cli.fix() || cli.dryRun()) {
+            AutoFixer fixer = new AutoFixer(modsDir, cli.dryRun());
+            int fixed = 0;
+            for (StandaloneIssue issue : issues) {
+                if (issue.canAutoFix() && !issue.isFixed()) {
+                    issue.applyFix(fixer);
+                    if (issue.isFixed()) fixed++;
+                }
+            }
+            if (fixed > 0) {
+                System.out.println((cli.dryRun() ? "[DRY RUN] Would fix: " : "Fixed: ") + fixed + " issue(s).");
+            }
         }
 
-        // Exit code: 0 = no issues, 1 = issues found, 2 = critical issues
+        // Script generation
+        if (cli.script()) {
+            new ScriptGenerator(modsDir).generate(issues);
+        }
+
+        // Console output
+        reporter.printConsole(mods, issues, loaders, cli.verbose());
+
+        // HTML report
+        if (cli.htmlEnabled()) {
+            Path htmlPath = cli.htmlOut() != null ? cli.htmlOut()
+                    : modsDir.resolve("compat-report.html");
+            reporter.writeHtml(mods, issues, htmlPath);
+        } else {
+            // Always write a default HTML report
+            reporter.writeHtml(mods, issues, Paths.get("compat-report.html"));
+        }
+
+        // JSON report
+        if (cli.jsonEnabled()) {
+            Path jsonPath = cli.jsonOut() != null ? cli.jsonOut()
+                    : modsDir.resolve("compat-report.json");
+            reporter.writeJson(mods, issues, jsonPath);
+        }
+
+        // Exit code: 2=critical, 1=issues found, 0=clean
         boolean hasCritical = issues.stream()
-                .anyMatch(i -> i.severity() == StandaloneIssue.Severity.CRITICAL);
-        System.exit(hasCritical ? 2 : issues.isEmpty() ? 0 : 1);
+                .anyMatch(i -> i.severity() == StandaloneIssue.Severity.CRITICAL && !i.isFixed());
+        System.exit(hasCritical ? 2 : issues.stream().anyMatch(i -> !i.isFixed()) ? 1 : 0);
     }
 
+    // ── CLI parsing ───────────────────────────────────────────────────────
+
+    private static CLIArgs parseArgs(String[] args) {
+        Path    modsDir     = Paths.get("mods");
+        String  mcVersion   = "";
+        String  loaderHint  = "";
+        Path    configDir   = null;
+        boolean fix         = false;
+        boolean dryRun      = false;
+        boolean script      = false;
+        Path    htmlOut     = null;
+        boolean htmlEnabled = false;
+        Path    jsonOut     = null;
+        boolean jsonEnabled = false;
+        boolean verbose     = false;
+        boolean help        = false;
+
+        for (int i = 0; i < args.length; i++) {
+            switch (args[i]) {
+                case "--mc-version"  -> { if (i + 1 < args.length) mcVersion  = args[++i]; }
+                case "--loader"      -> { if (i + 1 < args.length) loaderHint = args[++i]; }
+                case "--config-dir"  -> { if (i + 1 < args.length) configDir  = Paths.get(args[++i]); }
+                case "--fix"         -> fix         = true;
+                case "--dry-run"     -> dryRun      = true;
+                case "--script"      -> script      = true;
+                case "--verbose"     -> verbose     = true;
+                case "--help", "-h"  -> help        = true;
+                case "--html" -> {
+                    htmlEnabled = true;
+                    if (i + 1 < args.length && !args[i + 1].startsWith("--"))
+                        htmlOut = Paths.get(args[++i]);
+                }
+                case "--json" -> {
+                    jsonEnabled = true;
+                    if (i + 1 < args.length && !args[i + 1].startsWith("--"))
+                        jsonOut = Paths.get(args[++i]);
+                }
+                default -> {
+                    if (!args[i].startsWith("--")) modsDir = Paths.get(args[i]);
+                }
+            }
+        }
+
+        if (dryRun) fix = false; // dryRun implies preview mode; don't actually fix
+
+        return new CLIArgs(modsDir, mcVersion, loaderHint, configDir,
+                fix, dryRun, script, htmlOut, htmlEnabled, jsonOut, jsonEnabled, verbose, help);
+    }
+
+    // ── Auto-detect mods folder ───────────────────────────────────────────
+
     private static Path findDefaultModsDir() {
-        String os = System.getProperty("os.name", "").toLowerCase();
+        String os   = System.getProperty("os.name", "").toLowerCase();
         String home = System.getProperty("user.home");
 
         List<String> candidates;
@@ -98,8 +191,7 @@ public class StandaloneScanner {
             String appdata = System.getenv("APPDATA");
             candidates = List.of(
                     appdata != null ? appdata + "\\.minecraft\\mods" : "",
-                    appdata != null ? appdata + "\\PrismLauncher\\instances\\*\\mods" : "",
-                    home + "\\curseforge\\minecraft\\Instances\\*\\mods"
+                    home + "\\curseforge\\minecraft\\Instances"
             );
         } else if (os.contains("mac")) {
             candidates = List.of(
@@ -107,7 +199,6 @@ public class StandaloneScanner {
                     home + "/Library/Application Support/PrismLauncher/instances"
             );
         } else {
-            // Linux
             candidates = List.of(
                     home + "/.minecraft/mods",
                     home + "/.local/share/PrismLauncher/instances",
@@ -120,7 +211,46 @@ public class StandaloneScanner {
             File f = new File(c);
             if (f.exists() && f.isDirectory()) return f.toPath();
         }
-
         return Paths.get("mods");
+    }
+
+    // ── Help text ─────────────────────────────────────────────────────────
+
+    private static void printHelp() {
+        System.out.println("""
+                Minecraft Compatibility Manager — Standalone Scanner
+                Supports ALL Minecraft Java Edition versions ever released.
+
+                USAGE:
+                  java -jar compatmanager-standalone.jar [mods-folder] [options]
+
+                ARGUMENTS:
+                  mods-folder           Path to your mods folder (default: ./mods or auto-detected)
+
+                OPTIONS:
+                  --mc-version <ver>    Minecraft version for version-aware detection (e.g. 1.20.1)
+                  --loader <name>       Loader hint: fabric | forge | neoforge | quilt
+                  --config-dir <path>   Scan config folder for keybind/ID conflicts
+                  --fix                 Automatically move conflicting mods to disabled-by-compatmanager/
+                  --dry-run             Preview --fix actions without making changes
+                  --script              Generate fix.bat + fix.sh scripts
+                  --html [file]         Write HTML report (default: compat-report.html)
+                  --json [file]         Write JSON report (default: compat-report.json)
+                  --verbose             Show all mods, not only problematic ones
+                  --help, -h            Show this help
+
+                EXIT CODES:
+                  0   No issues found
+                  1   Issues found (non-critical)
+                  2   Critical issues found
+
+                EXAMPLES:
+                  java -jar compatmanager-standalone.jar
+                  java -jar compatmanager-standalone.jar ~/.minecraft/mods --mc-version 1.20.1
+                  java -jar compatmanager-standalone.jar ./mods --fix --dry-run
+                  java -jar compatmanager-standalone.jar ./mods --fix --json report.json
+                  java -jar compatmanager-standalone.jar ./mods --config-dir ./config --verbose
+                  java -jar compatmanager-standalone.jar ./mods --script
+                """);
     }
 }
