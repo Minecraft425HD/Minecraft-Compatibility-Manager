@@ -1,0 +1,42 @@
+// Pure Java — no Minecraft, no Architectury, no mod loader dependency.
+// This module works with literally any Minecraft version.
+
+plugins {
+    id 'java'
+    id 'application'
+}
+
+group   = rootProject.maven_group
+version = rootProject.mod_version
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+dependencies {
+    // JSON parsing for fabric.mod.json / quilt.mod.json
+    implementation 'com.google.code.gson:gson:2.10.1'
+    // TOML parsing for mods.toml / neoforge.mods.toml
+    implementation 'com.moandjiezana.toml:toml4j:0.7.2'
+}
+
+application {
+    mainClass = 'dev.compatmanager.standalone.StandaloneScanner'
+}
+
+jar {
+    manifest {
+        attributes 'Main-Class': 'dev.compatmanager.standalone.StandaloneScanner'
+    }
+    // Fat JAR — everything bundled, run with: java -jar compatmanager-standalone.jar
+    from configurations.runtimeClasspath.collect {
+        it.isDirectory() ? it : zipTree(it)
+    }
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    archiveClassifier = 'standalone'
+}
+
+repositories {
+    mavenCentral()
+}

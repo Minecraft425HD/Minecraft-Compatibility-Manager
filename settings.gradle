@@ -10,4 +10,11 @@ pluginManagement {
     }
 }
 
+// ── Modern multi-loader modules (1.16.5 – latest) ─────────────────────────
 include("common", "fabric", "forge", "neoforge", "quilt")
+
+// ── Legacy Forge 1.12.2 ───────────────────────────────────────────────────
+include("forge-legacy")
+
+// ── Standalone scanner (works with EVERY MC version, no Minecraft needed) ─
+include("standalone")

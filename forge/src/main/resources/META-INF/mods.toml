@@ -1,5 +1,5 @@
 modLoader     = "javafml"
-loaderVersion = "[47,)"
+loaderVersion = "[36,)"
 license       = "MIT"
 
 [[mods]]
@@ -21,6 +21,6 @@ Supports all modern Forge, NeoForge, Fabric and Quilt versions.
 [[dependencies.compatmanager]]
     modId      = "minecraft"
     mandatory  = true
-    versionRange = "[1.18.2,)"
+    versionRange = "[1.16.5,)"
     ordering   = "NONE"
     side       = "BOTH"
