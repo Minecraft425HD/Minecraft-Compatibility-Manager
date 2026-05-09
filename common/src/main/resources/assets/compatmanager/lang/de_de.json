@@ -1,0 +1,44 @@
+{
+  "compatmanager.title": "Mod-Kompatibilitäts-Manager",
+  "compatmanager.subtitle": "Klicke 'Jetzt scannen' um deine Mod-Liste zu analysieren",
+  "compatmanager.scanning": "Mods werden gescannt…",
+  "compatmanager.no_issues": "✔ Keine Kompatibilitätsprobleme gefunden!",
+  "compatmanager.issues_found": "⚠ %d Problem(e) gefunden — klicke für Details",
+
+  "compatmanager.button.scan": "Jetzt scannen",
+  "compatmanager.button.details": "Details",
+  "compatmanager.button.apply": "Fix anwenden",
+  "compatmanager.button.close": "Schließen",
+  "compatmanager.button.back": "← Zurück",
+  "compatmanager.button.copy": "Detail kopieren",
+
+  "compatmanager.severity.critical": "KRITISCH",
+  "compatmanager.severity.high": "HOCH",
+  "compatmanager.severity.medium": "MITTEL",
+  "compatmanager.severity.low": "NIEDRIG",
+  "compatmanager.severity.info": "INFO",
+
+  "compatmanager.issue.version_conflict": "Versionskonflikt",
+  "compatmanager.issue.missing_dependency": "Fehlende Abhängigkeit",
+  "compatmanager.issue.incompatible_mods": "Bekannte Inkompatibilität",
+  "compatmanager.issue.duplicate_mod": "Doppelter / konfliktierender Mod",
+  "compatmanager.issue.api_mismatch": "API- / Java-Versionsfehler",
+  "compatmanager.issue.config_conflict": "Konfigurationskonflikt",
+  "compatmanager.issue.class_conflict": "Klassenkonflikt",
+
+  "compatmanager.solution.update_mod": "Auf Version %s aktualisieren",
+  "compatmanager.solution.remove_mod": "Mod entfernen: %s",
+  "compatmanager.solution.add_dependency": "Fehlenden Mod installieren: %s",
+  "compatmanager.solution.config_change": "Konfigurationswert in %s ändern",
+  "compatmanager.solution.load_order": "Ladereihenfolge anpassen",
+  "compatmanager.solution.use_compat_mod": "Kompatibilitäts-Patch installieren: %s",
+
+  "compatmanager.key.open_manager": "Kompatibilitäts-Manager öffnen",
+
+  "compatmanager.detail.affected_mods": "Betroffene Mods:",
+  "compatmanager.detail.solutions": "Lösungsvorschläge:",
+  "compatmanager.detail.description": "Details:",
+
+  "compatmanager.toast.scan_complete": "Kompatibilitäts-Scan abgeschlossen",
+  "compatmanager.toast.issues": "%d Kompatibilitätsproblem(e) erkannt"
+}

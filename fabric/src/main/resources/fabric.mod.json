@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "compatmanager",
+  "version": "${version}",
+  "name": "Minecraft Compatibility Manager",
+  "description": "Detects mod compatibility issues and provides automated fix suggestions.",
+  "authors": ["CompatManager Team"],
+  "license": "MIT",
+  "environment": "*",
+  "entrypoints": {
+    "main":   ["dev.compatmanager.fabric.CompatManagerFabric"],
+    "client": ["dev.compatmanager.fabric.CompatManagerFabricClient"]
+  },
+  "mixins": [
+    "compatmanager-common.mixins.json",
+    "compatmanager-fabric.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.14.0",
+    "fabric-api":   "*",
+    "minecraft":    ">=1.18.2",
+    "java":         ">=17"
+  }
+}

@@ -1,0 +1,26 @@
+modLoader     = "javafml"
+loaderVersion = "[47,)"
+license       = "MIT"
+
+[[mods]]
+    modId       = "compatmanager"
+    version     = "${version}"
+    displayName = "Minecraft Compatibility Manager"
+    description = '''
+Detects compatibility problems between mods and provides automated solution suggestions.
+Supports all modern Forge, NeoForge, Fabric and Quilt versions.
+'''
+
+[[dependencies.compatmanager]]
+    modId      = "forge"
+    mandatory  = true
+    versionRange = "[47,)"
+    ordering   = "NONE"
+    side       = "BOTH"
+
+[[dependencies.compatmanager]]
+    modId      = "minecraft"
+    mandatory  = true
+    versionRange = "[1.18.2,)"
+    ordering   = "NONE"
+    side       = "BOTH"

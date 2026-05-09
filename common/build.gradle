@@ -1,0 +1,17 @@
+architectury {
+    common("fabric", "forge", "neoforge", "quilt")
+}
+
+loom {
+    // Common module uses official Mojang mappings so all platforms can share code
+}
+
+dependencies {
+    mappings loom.officialMojangMappings()
+
+    // Compile-time stubs for all platforms (provided by each platform at runtime)
+    modCompileOnly "net.fabricmc:fabric-loader:${rootProject.fabric_loader_version}"
+
+    // Architectury API common module
+    modCompileOnly "dev.architectury:architectury:${rootProject.architectury_version}"
+}

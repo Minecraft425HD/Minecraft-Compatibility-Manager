@@ -1,0 +1,48 @@
+architectury {
+    platformSetupLoomIde()
+    forge()
+}
+
+loom {
+    forge {
+        convertAccessWideners = true
+        extraAccessWideners.add loom.accessWidenerPath
+        mixinConfig "compatmanager-common.mixins.json"
+        mixinConfig "compatmanager-forge.mixins.json"
+    }
+}
+
+configurations {
+    common { canBeResolved = true; canBeConsumed = false }
+    compileClasspath { extendsFrom configurations.common }
+    runtimeClasspath { extendsFrom configurations.common }
+    developmentForge { extendsFrom configurations.common }
+    shadow
+}
+
+dependencies {
+    mappings loom.officialMojangMappings()
+    forge "net.minecraftforge:forge:${rootProject.forge_version}"
+    modCompileOnly "dev.architectury:architectury-forge:${rootProject.architectury_version}"
+
+    common(project(path: ":common", configuration: "namedElements")) { transitive false }
+    shadow(project(":common")) { transitive false }
+}
+
+processResources {
+    inputs.property "version", project.version
+    filteringCharset "UTF-8"
+    filesMatching("META-INF/mods.toml") { expand version: project.version }
+}
+
+shadowJar {
+    configurations = [project.configurations.shadow]
+    classifier "dev-shadow"
+    exclude "fabric.mod.json"
+}
+
+remapJar {
+    inputFile.set shadowJar.archiveFile
+    dependsOn shadowJar
+    classifier null
+}
