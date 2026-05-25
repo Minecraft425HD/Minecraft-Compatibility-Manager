@@ -37,6 +37,7 @@ public class StandaloneScanner {
 
     private record CLIArgs(
             Path    modsDir,
+            boolean explicitModsDir,  // true when user supplied the path on the CLI
             String  mcVersion,
             String  loaderHint,
             Path    configDir,
@@ -63,7 +64,8 @@ public class StandaloneScanner {
         }
 
         Path modsDir = cli.modsDir();
-        if (!modsDir.toFile().exists()) modsDir = findDefaultModsDir();
+        // Only attempt auto-detection when the user didn't explicitly supply a path
+        if (!cli.explicitModsDir() && !modsDir.toFile().exists()) modsDir = findDefaultModsDir();
 
         if (!modsDir.toFile().exists()) {
             System.err.println("ERROR: Mods folder not found: " + modsDir.toAbsolutePath());
@@ -140,30 +142,34 @@ public class StandaloneScanner {
         }
 
         // Exit code: 2=critical, 1=issues found, 0=clean
+        // Dry-run: issues aren't truly fixed, so reflect original severity in exit code
         boolean hasCritical = issues.stream()
-                .anyMatch(i -> i.severity() == StandaloneIssue.Severity.CRITICAL && !i.isFixed());
-        System.exit(hasCritical ? 2 : issues.stream().anyMatch(i -> !i.isFixed()) ? 1 : 0);
+                .anyMatch(i -> i.severity() == StandaloneIssue.Severity.CRITICAL
+                        && (cli.dryRun() || !i.isFixed()));
+        boolean hasAny = issues.stream().anyMatch(i -> cli.dryRun() || !i.isFixed());
+        System.exit(hasCritical ? 2 : hasAny ? 1 : 0);
     }
 
     // ── CLI parsing ───────────────────────────────────────────────────────
 
     private static CLIArgs parseArgs(String[] args) {
-        Path    modsDir       = Paths.get("mods");
-        String  mcVersion     = "";
-        String  loaderHint    = "";
-        Path    configDir     = null;
-        boolean fix           = false;
-        boolean dryRun        = false;
-        boolean script        = false;
-        Path    htmlOut       = null;
-        boolean htmlEnabled   = false;
-        Path    jsonOut       = null;
-        boolean jsonEnabled   = false;
-        boolean verbose       = false;
-        boolean help          = false;
-        boolean offline       = false;
-        boolean updateDb      = false;
-        String  curseForgeKey = "";
+        Path    modsDir          = Paths.get("mods");
+        boolean explicitModsDir  = false;
+        String  mcVersion        = "";
+        String  loaderHint       = "";
+        Path    configDir        = null;
+        boolean fix              = false;
+        boolean dryRun           = false;
+        boolean script           = false;
+        Path    htmlOut          = null;
+        boolean htmlEnabled      = false;
+        Path    jsonOut          = null;
+        boolean jsonEnabled      = false;
+        boolean verbose          = false;
+        boolean help             = false;
+        boolean offline          = false;
+        boolean updateDb         = false;
+        String  curseForgeKey    = "";
 
         for (int i = 0; i < args.length; i++) {
             switch (args[i]) {
@@ -189,14 +195,19 @@ public class StandaloneScanner {
                         jsonOut = Paths.get(args[++i]);
                 }
                 default -> {
-                    if (!args[i].startsWith("--")) modsDir = Paths.get(args[i]);
+                    if (!args[i].startsWith("--")) {
+                        modsDir = Paths.get(args[i]);
+                        explicitModsDir = true;
+                    } else {
+                        System.err.println("WARNING: Unknown flag '" + args[i] + "' — ignored. Run --help for usage.");
+                    }
                 }
             }
         }
 
         if (dryRun) fix = false; // dryRun implies preview mode; don't actually fix
 
-        return new CLIArgs(modsDir, mcVersion, loaderHint, configDir,
+        return new CLIArgs(modsDir, explicitModsDir, mcVersion, loaderHint, configDir,
                 fix, dryRun, script, htmlOut, htmlEnabled, jsonOut, jsonEnabled, verbose, help,
                 offline, updateDb, curseForgeKey);
     }

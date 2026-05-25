@@ -22,9 +22,10 @@ public class AutoFixer {
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
-    private final Path    disabledDir;
-    private final Path    logFile;
-    private final boolean dryRun;
+    private final Path      disabledDir;
+    private final Path      logFile;
+    private final boolean   dryRun;
+    private final Set<String> processed = new HashSet<>(); // deduplicate by jar path
 
     public AutoFixer(Path modsDir, boolean dryRun) {
         this.disabledDir = modsDir.resolve("disabled-by-compatmanager");
@@ -34,7 +35,8 @@ public class AutoFixer {
 
     /**
      * Moves the JAR at {@code jarPath} into the disabled folder.
-     * @return true if the operation succeeded (or would succeed in dry-run mode)
+     * Returns true if the operation succeeded (or would succeed in dry-run mode).
+     * Silently skips duplicate calls for the same JAR path.
      */
     public boolean disableMod(String modId, String jarPath, String reason) {
         return disableMod(modId, jarPath, reason, "Incompatibility");
@@ -42,6 +44,7 @@ public class AutoFixer {
 
     public boolean disableMod(String modId, String jarPath, String reason, String issueType) {
         if (jarPath == null || jarPath.isBlank()) return false;
+        if (!processed.add(jarPath)) return true; // already handled this JAR
         Path src = Paths.get(jarPath);
         if (!src.toFile().exists()) return false;
 
