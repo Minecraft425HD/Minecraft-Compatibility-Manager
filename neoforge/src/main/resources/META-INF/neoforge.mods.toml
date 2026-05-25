@@ -1,0 +1,26 @@
+modLoader     = "javafml"
+loaderVersion = "[2,)"
+license       = "MIT"
+
+[[mods]]
+    modId       = "compatmanager"
+    version     = "${version}"
+    displayName = "Minecraft Compatibility Manager"
+    description = '''
+Detects compatibility problems between mods and provides automated solution suggestions.
+Supports NeoForge 1.20.2+.
+'''
+
+[[dependencies.compatmanager]]
+    modId      = "neoforge"
+    type       = "required"
+    versionRange = "[20.4,)"
+    ordering   = "NONE"
+    side       = "BOTH"
+
+[[dependencies.compatmanager]]
+    modId      = "minecraft"
+    type       = "required"
+    versionRange = "[1.20.2,)"
+    ordering   = "NONE"
+    side       = "BOTH"

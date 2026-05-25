@@ -1,0 +1,53 @@
+// Forge 1.12.2 — uses the old ForgeGradle 2.x build system.
+// This is intentionally kept separate from the Architectury setup
+// because Forge 1.12.2 uses an entirely different build pipeline.
+
+buildscript {
+    repositories {
+        maven { url = "https://maven.minecraftforge.net/" }
+        mavenCentral()
+    }
+    dependencies {
+        classpath "net.minecraftforge.gradle:ForgeGradle:2.3-SNAPSHOT"
+    }
+}
+
+apply plugin: "net.minecraftforge.gradle.forge"
+
+group   = rootProject.maven_group
+version = rootProject.mod_version
+archivesBaseName = "compatmanager-forge-legacy"
+
+minecraft {
+    version  = "1.12.2-14.23.5.2860"
+    runDir   = "run"
+    mappings = "stable_39"
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // Nothing extra needed for 1.12.2 Forge
+}
+
+processResources {
+    inputs.property "version", project.version
+    inputs.property "mcversion", project.minecraft.version
+
+    filesMatching("mcmod.info") {
+        expand version: project.version, mcversion: project.minecraft.version
+    }
+    from(sourceSets.main.resources.srcDirs) {
+        exclude "mcmod.info"
+    }
+}
+
+jar {
+    manifest {
+        attributes([
+            "FMLAT": "compatmanager_at.cfg"
+        ])
+    }
+}

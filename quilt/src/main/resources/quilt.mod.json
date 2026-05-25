@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "quilt_loader": {
+    "group": "dev.compatmanager",
+    "id": "compatmanager",
+    "version": "${version}",
+    "metadata": {
+      "name": "Minecraft Compatibility Manager",
+      "description": "Detects mod compatibility issues and provides automated fix suggestions.",
+      "license": "MIT"
+    },
+    "intermediate_mappings": "net.fabricmc:intermediary",
+    "entrypoints": {
+      "init":        [{ "value": "dev.compatmanager.quilt.CompatManagerQuilt" }],
+      "client_init": [{ "value": "dev.compatmanager.quilt.CompatManagerQuilt" }]
+    },
+    "depends": [
+      { "id": "quilt_loader",  "versions": ">=0.20.0" },
+      { "id": "minecraft",     "versions": ">=1.18.2" },
+      { "id": "java",          "versions": ">=17" }
+    ]
+  },
+  "mixin": ["compatmanager-common.mixins.json", "compatmanager-quilt.mixins.json"]
+}

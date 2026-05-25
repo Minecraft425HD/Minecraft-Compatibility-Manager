@@ -1,0 +1,42 @@
+architectury {
+    platformSetupLoomIde()
+    fabric()
+}
+
+loom {
+    accessWidenerPath = project(":common").loom.accessWidenerPath
+}
+
+configurations {
+    common { canBeResolved = true; canBeConsumed = false }
+    compileClasspath { extendsFrom configurations.common }
+    runtimeClasspath { extendsFrom configurations.common }
+    developmentFabric { extendsFrom configurations.common }
+    shadow
+}
+
+dependencies {
+    mappings "net.fabricmc:yarn:${rootProject.yarn_mappings}:v2"
+    modImplementation "net.fabricmc:fabric-loader:${rootProject.fabric_loader_version}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${rootProject.fabric_api_version}"
+    modCompileOnly "dev.architectury:architectury-fabric:${rootProject.architectury_version}"
+
+    common(project(path: ":common", configuration: "namedElements")) { transitive false }
+    shadow(project(":common")) { transitive false }
+}
+
+processResources {
+    inputs.property "version", project.version
+    filteringCharset "UTF-8"
+    filesMatching("fabric.mod.json") { expand version: project.version }
+}
+
+shadowJar {
+    configurations = [project.configurations.shadow]
+    classifier "dev-shadow"
+}
+
+remapJar {
+    inputFile.set shadowJar.archiveFile
+    dependsOn shadowJar
+}

@@ -1,0 +1,37 @@
+architectury {
+    platformSetupLoomIde()
+    // Quilt is Fabric-compatible; use fabric platform with Quilt loader
+    fabric()
+}
+
+configurations {
+    common { canBeResolved = true; canBeConsumed = false }
+    compileClasspath { extendsFrom configurations.common }
+    runtimeClasspath { extendsFrom configurations.common }
+    developmentFabric { extendsFrom configurations.common }
+    shadow
+}
+
+dependencies {
+    mappings "net.fabricmc:yarn:${rootProject.yarn_mappings}:v2"
+    modImplementation "org.quiltmc:quilt-loader:${rootProject.quilt_loader_version}"
+
+    common(project(path: ":common", configuration: "namedElements")) { transitive false }
+    shadow(project(":common")) { transitive false }
+}
+
+processResources {
+    inputs.property "version", project.version
+    filteringCharset "UTF-8"
+    filesMatching("quilt.mod.json") { expand version: project.version }
+}
+
+shadowJar {
+    configurations = [project.configurations.shadow]
+    classifier "dev-shadow"
+}
+
+remapJar {
+    inputFile.set shadowJar.archiveFile
+    dependsOn shadowJar
+}

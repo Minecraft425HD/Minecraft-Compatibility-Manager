@@ -1,0 +1,44 @@
+{
+  "compatmanager.title": "Mod Compatibility Manager",
+  "compatmanager.subtitle": "Press 'Scan Now' to analyse your mod list",
+  "compatmanager.scanning": "Scanning mods…",
+  "compatmanager.no_issues": "✔ No compatibility issues found!",
+  "compatmanager.issues_found": "⚠ %d issue(s) found — click an entry for details",
+
+  "compatmanager.button.scan": "Scan Now",
+  "compatmanager.button.details": "Details",
+  "compatmanager.button.apply": "Apply Fix",
+  "compatmanager.button.close": "Close",
+  "compatmanager.button.back": "← Back",
+  "compatmanager.button.copy": "Copy Detail",
+
+  "compatmanager.severity.critical": "CRITICAL",
+  "compatmanager.severity.high": "HIGH",
+  "compatmanager.severity.medium": "MEDIUM",
+  "compatmanager.severity.low": "LOW",
+  "compatmanager.severity.info": "INFO",
+
+  "compatmanager.issue.version_conflict": "Version Conflict",
+  "compatmanager.issue.missing_dependency": "Missing Dependency",
+  "compatmanager.issue.incompatible_mods": "Known Incompatibility",
+  "compatmanager.issue.duplicate_mod": "Duplicate / Conflicting Mod",
+  "compatmanager.issue.api_mismatch": "API / Java Version Mismatch",
+  "compatmanager.issue.config_conflict": "Configuration Conflict",
+  "compatmanager.issue.class_conflict": "Class Conflict",
+
+  "compatmanager.solution.update_mod": "Update to version %s",
+  "compatmanager.solution.remove_mod": "Remove mod: %s",
+  "compatmanager.solution.add_dependency": "Install missing mod: %s",
+  "compatmanager.solution.config_change": "Edit config value in %s",
+  "compatmanager.solution.load_order": "Adjust mod load order",
+  "compatmanager.solution.use_compat_mod": "Install compatibility patch: %s",
+
+  "compatmanager.key.open_manager": "Open Compatibility Manager",
+
+  "compatmanager.detail.affected_mods": "Affected Mods:",
+  "compatmanager.detail.solutions": "Suggested Fixes:",
+  "compatmanager.detail.description": "Details:",
+
+  "compatmanager.toast.scan_complete": "Compat Scan Complete",
+  "compatmanager.toast.issues": "%d compatibility issue(s) detected"
+}

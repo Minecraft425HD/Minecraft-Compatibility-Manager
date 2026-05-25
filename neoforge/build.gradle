@@ -1,0 +1,43 @@
+architectury {
+    platformSetupLoomIde()
+    neoForge()
+}
+
+loom {
+    neoForge {}
+}
+
+configurations {
+    common { canBeResolved = true; canBeConsumed = false }
+    compileClasspath { extendsFrom configurations.common }
+    runtimeClasspath { extendsFrom configurations.common }
+    developmentNeoForge { extendsFrom configurations.common }
+    shadow
+}
+
+dependencies {
+    mappings loom.officialMojangMappings()
+    neoForge "net.neoforged:neoforge:${rootProject.neoforge_version}"
+    modCompileOnly "dev.architectury:architectury-neoforge:${rootProject.architectury_version}"
+
+    common(project(path: ":common", configuration: "namedElements")) { transitive false }
+    shadow(project(":common")) { transitive false }
+}
+
+processResources {
+    inputs.property "version", project.version
+    filteringCharset "UTF-8"
+    filesMatching("META-INF/neoforge.mods.toml") { expand version: project.version }
+}
+
+shadowJar {
+    configurations = [project.configurations.shadow]
+    classifier "dev-shadow"
+    exclude "fabric.mod.json"
+}
+
+remapJar {
+    inputFile.set shadowJar.archiveFile
+    dependsOn shadowJar
+    classifier null
+}
