@@ -7,9 +7,12 @@ public record ScanContext(
         String loaderHint,
         Path configDir,
         boolean verbose,
-        boolean dryRun
+        boolean dryRun,
+        boolean offline,
+        boolean updateDb,
+        String curseForgeKey
 ) {
     public static ScanContext defaults() {
-        return new ScanContext("", "", null, false, false);
+        return new ScanContext("", "", null, false, false, false, false, "");
     }
 }

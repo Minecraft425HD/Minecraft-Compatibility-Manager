@@ -1,5 +1,6 @@
 package dev.compatmanager.standalone;
 
+import dev.compatmanager.standalone.db.OnlineDatabase;
 import dev.compatmanager.standalone.detector.ScanContext;
 import dev.compatmanager.standalone.fix.AutoFixer;
 import dev.compatmanager.standalone.fix.ScriptGenerator;
@@ -47,7 +48,10 @@ public class StandaloneScanner {
             Path    jsonOut,
             boolean jsonEnabled,
             boolean verbose,
-            boolean help
+            boolean help,
+            boolean offline,
+            boolean updateDb,
+            String  curseForgeKey
     ) {}
 
     public static void main(String[] args) throws Exception {
@@ -73,10 +77,20 @@ public class StandaloneScanner {
             System.out.println("MC version: " + cli.mcVersion());
         if (!cli.loaderHint().isBlank())
             System.out.println("Loader: " + cli.loaderHint());
+        if (cli.offline())
+            System.out.println("Mode: offline (API calls disabled)");
+
+        // Refresh online database if requested
+        if (cli.updateDb() && !cli.offline()) {
+            System.out.print("Updating online incompatibility database... ");
+            OnlineDatabase.update();
+            System.out.println("done.");
+        }
 
         ScanContext ctx = new ScanContext(
                 cli.mcVersion(), cli.loaderHint(), cli.configDir(),
-                cli.verbose(), cli.dryRun());
+                cli.verbose(), cli.dryRun(),
+                cli.offline(), cli.updateDb(), cli.curseForgeKey());
 
         StandaloneModPlatform platform = new StandaloneModPlatform(modsDir);
         List<UnifiedModMeta>  mods     = platform.getLoadedMods();
@@ -134,30 +148,36 @@ public class StandaloneScanner {
     // ── CLI parsing ───────────────────────────────────────────────────────
 
     private static CLIArgs parseArgs(String[] args) {
-        Path    modsDir     = Paths.get("mods");
-        String  mcVersion   = "";
-        String  loaderHint  = "";
-        Path    configDir   = null;
-        boolean fix         = false;
-        boolean dryRun      = false;
-        boolean script      = false;
-        Path    htmlOut     = null;
-        boolean htmlEnabled = false;
-        Path    jsonOut     = null;
-        boolean jsonEnabled = false;
-        boolean verbose     = false;
-        boolean help        = false;
+        Path    modsDir       = Paths.get("mods");
+        String  mcVersion     = "";
+        String  loaderHint    = "";
+        Path    configDir     = null;
+        boolean fix           = false;
+        boolean dryRun        = false;
+        boolean script        = false;
+        Path    htmlOut       = null;
+        boolean htmlEnabled   = false;
+        Path    jsonOut       = null;
+        boolean jsonEnabled   = false;
+        boolean verbose       = false;
+        boolean help          = false;
+        boolean offline       = false;
+        boolean updateDb      = false;
+        String  curseForgeKey = "";
 
         for (int i = 0; i < args.length; i++) {
             switch (args[i]) {
-                case "--mc-version"  -> { if (i + 1 < args.length) mcVersion  = args[++i]; }
-                case "--loader"      -> { if (i + 1 < args.length) loaderHint = args[++i]; }
-                case "--config-dir"  -> { if (i + 1 < args.length) configDir  = Paths.get(args[++i]); }
-                case "--fix"         -> fix         = true;
-                case "--dry-run"     -> dryRun      = true;
-                case "--script"      -> script      = true;
-                case "--verbose"     -> verbose     = true;
-                case "--help", "-h"  -> help        = true;
+                case "--mc-version"      -> { if (i + 1 < args.length) mcVersion     = args[++i]; }
+                case "--loader"          -> { if (i + 1 < args.length) loaderHint    = args[++i]; }
+                case "--config-dir"      -> { if (i + 1 < args.length) configDir     = Paths.get(args[++i]); }
+                case "--curseforge-key"  -> { if (i + 1 < args.length) curseForgeKey = args[++i]; }
+                case "--fix"             -> fix       = true;
+                case "--dry-run"         -> dryRun    = true;
+                case "--script"          -> script    = true;
+                case "--verbose"         -> verbose   = true;
+                case "--offline"         -> offline   = true;
+                case "--update-db"       -> updateDb  = true;
+                case "--help", "-h"      -> help      = true;
                 case "--html" -> {
                     htmlEnabled = true;
                     if (i + 1 < args.length && !args[i + 1].startsWith("--"))
@@ -177,7 +197,8 @@ public class StandaloneScanner {
         if (dryRun) fix = false; // dryRun implies preview mode; don't actually fix
 
         return new CLIArgs(modsDir, mcVersion, loaderHint, configDir,
-                fix, dryRun, script, htmlOut, htmlEnabled, jsonOut, jsonEnabled, verbose, help);
+                fix, dryRun, script, htmlOut, htmlEnabled, jsonOut, jsonEnabled, verbose, help,
+                offline, updateDb, curseForgeKey);
     }
 
     // ── Auto-detect mods folder ───────────────────────────────────────────
@@ -228,16 +249,19 @@ public class StandaloneScanner {
                   mods-folder           Path to your mods folder (default: ./mods or auto-detected)
 
                 OPTIONS:
-                  --mc-version <ver>    Minecraft version for version-aware detection (e.g. 1.20.1)
-                  --loader <name>       Loader hint: fabric | forge | neoforge | quilt
-                  --config-dir <path>   Scan config folder for keybind/ID conflicts
-                  --fix                 Automatically move conflicting mods to disabled-by-compatmanager/
-                  --dry-run             Preview --fix actions without making changes
-                  --script              Generate fix.bat + fix.sh scripts
-                  --html [file]         Write HTML report (default: compat-report.html)
-                  --json [file]         Write JSON report (default: compat-report.json)
-                  --verbose             Show all mods, not only problematic ones
-                  --help, -h            Show this help
+                  --mc-version <ver>        Minecraft version for version-aware detection (e.g. 1.20.1)
+                  --loader <name>           Loader hint: fabric | forge | neoforge | quilt
+                  --config-dir <path>       Scan config folder for keybind/ID conflicts
+                  --fix                     Automatically move conflicting mods to disabled-by-compatmanager/
+                  --dry-run                 Preview --fix actions without making changes
+                  --script                  Generate fix.bat + fix.sh scripts
+                  --html [file]             Write HTML report (default: compat-report.html)
+                  --json [file]             Write JSON report (default: compat-report.json)
+                  --verbose                 Show all mods, not only problematic ones
+                  --offline                 Disable all network/API calls (use cached data only)
+                  --update-db               Force-refresh the online incompatibility database
+                  --curseforge-key <key>    CurseForge API key (or set CF_API_KEY env var)
+                  --help, -h                Show this help
 
                 EXIT CODES:
                   0   No issues found

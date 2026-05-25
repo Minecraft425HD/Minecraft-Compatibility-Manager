@@ -1,6 +1,7 @@
 package dev.compatmanager.standalone;
 
 import dev.compatmanager.standalone.db.ModDatabase;
+import dev.compatmanager.standalone.db.OnlineDatabase;
 import dev.compatmanager.standalone.db.VersionUtils;
 import dev.compatmanager.standalone.detector.*;
 import dev.compatmanager.standalone.parser.UnifiedModMeta;
@@ -17,7 +18,16 @@ public class StandaloneDetector {
             new ClassConflictDetector(),
             new JavaBytecodeDetector(),
             new LibraryShadeDetector(),
-            new ConfigConflictDetector()
+            new ConfigConflictDetector(),
+            new MixinConflictDetector(),
+            new NamespaceConflictDetector(),
+            new ResourceConflictDetector(),
+            new CoremodConflictDetector(),
+            new TransitiveDependencyDetector(),
+            new ChangelogConflictDetector(),
+            new PackManifestValidator(),
+            new ModrinthCompatDetector(),
+            new CurseForgeCompatDetector()
     );
 
     public StandaloneDetector(StandaloneModPlatform platform) {
@@ -129,7 +139,11 @@ public class StandaloneDetector {
 
     private List<StandaloneIssue> detectKnownIncompatibilities() {
         List<StandaloneIssue> issues = new ArrayList<>();
-        List<ModDatabase.IncompatPair> pairs = ModDatabase.getIncompatPairsForMcVersion(ctx.mcVersion());
+        List<ModDatabase.IncompatPair> pairs = new ArrayList<>(ModDatabase.getIncompatPairsForMcVersion(ctx.mcVersion()));
+        // Merge online database pairs (auto-updating community list)
+        try {
+            pairs.addAll(OnlineDatabase.getExtraPairs(ctx.offline()));
+        } catch (Exception ignored) {}
 
         for (ModDatabase.IncompatPair p : pairs) {
             if (!platform.isModLoaded(p.modA()) || !platform.isModLoaded(p.modB())) continue;
